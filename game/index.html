@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SKYLANE — Island Run</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87bfe8;
+    font-family: "Segoe UI", Arial, sans-serif; color: #fff; }
+  #game-canvas { display: block; width: 100%; height: 100%; }
+
+  /* --- HUD ---------------------------------------------------------- */
+  #hud { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #hud.on { display: block; }
+  .panel { position: absolute; background: rgba(8, 24, 44, 0.72);
+    border: 1px solid rgba(140, 220, 255, 0.55); border-radius: 10px;
+    padding: 10px 14px; backdrop-filter: blur(2px); }
+  .panel .label { font-size: 10px; letter-spacing: 2px; color: #8cdcff; }
+  .panel .value { font-size: 22px; font-weight: 700; color: #fff;
+    text-shadow: 0 0 8px rgba(120, 210, 255, 0.9); }
+  #hud-left { top: 14px; left: 14px; display: flex; gap: 10px; }
+  #hud-left .panel { position: static; min-width: 104px; text-align: center; }
+  #hud-right { top: 14px; right: 14px; display: flex; gap: 10px; align-items: flex-start; }
+  #hud-right .panel { position: static; min-width: 110px; text-align: center; }
+  #hud-horizon { border: 1px solid rgba(140, 220, 255, 0.55); border-radius: 50%;
+    background: rgba(8, 24, 44, 0.72); }
+  #hud-fuel { position: absolute; left: 14px; bottom: 14px; width: 260px; }
+  #hud-fuel-fill { height: 12px; border-radius: 6px; background: #37d67a;
+    width: 100%; transition: width 0.2s linear; }
+  #hud-fuel-track { height: 12px; border-radius: 6px; background: rgba(8,24,44,0.7);
+    border: 1px solid rgba(140,220,255,0.55); overflow: hidden; margin-top: 4px; }
+  #hud-fuel-text { font-size: 12px; letter-spacing: 2px; color: #8cdcff; }
+  #hud-message { position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    font-size: 26px; font-weight: 800; text-align: center; color: #fff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.7), 0 0 18px rgba(120,210,255,0.8);
+    opacity: 0; transition: opacity 0.4s; white-space: nowrap; }
+  #hud-warn { position: absolute; top: 32%; left: 50%; transform: translateX(-50%);
+    font-size: 20px; font-weight: 800; color: #ff5544; display: none;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8); animation: blink 0.7s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  #hud-help { position: absolute; right: 14px; bottom: 14px; font-size: 12px;
+    color: rgba(255,255,255,0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    text-align: right; line-height: 1.6; }
+
+  /* --- Screens ------------------------------------------------------- */
+  .screen { position: absolute; inset: 0; display: none; align-items: center;
+    justify-content: center; flex-direction: column; text-align: center;
+    background: radial-gradient(ellipse at center, rgba(10,40,70,0.55), rgba(4,12,24,0.82));
+    pointer-events: auto; }
+  .screen h1 { font-size: 52px; letter-spacing: 4px; color: #fff;
+    text-shadow: 0 0 24px rgba(120,210,255,0.9), 0 4px 0 rgba(0,0,0,0.3); }
+  .screen h2 { font-size: 15px; letter-spacing: 6px; color: #8cdcff; margin: 6px 0 18px; }
+  .screen p { font-size: 16px; line-height: 1.7; color: #dfefff; max-width: 560px; }
+  .screen .keys { margin: 16px 0; font-size: 14px; color: #bfe6ff; line-height: 1.9; }
+  .screen .keys b { color: #fff; background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.4); border-radius: 5px; padding: 1px 8px; }
+  .big-btn { margin-top: 20px; pointer-events: auto; cursor: pointer;
+    font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #06263f;
+    background: linear-gradient(180deg, #7fd4ff, #2fa8e8);
+    border: none; border-radius: 12px; padding: 14px 42px;
+    box-shadow: 0 6px 0 #1668a0, 0 10px 24px rgba(0,0,0,0.45); }
+  .big-btn:hover { filter: brightness(1.1); }
+  .big-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #1668a0; }
+  #btn-mute { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    pointer-events: auto; cursor: pointer; font-size: 12px; letter-spacing: 1px;
+    color: #dff3ff; background: rgba(8,24,44,0.72);
+    border: 1px solid rgba(140,220,255,0.55); border-radius: 8px; padding: 6px 12px; }
+  .score-line { font-size: 24px; font-weight: 800; color: #ffe08a; margin-top: 10px; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div id="hud-left">
+    <div class="panel"><div class="label">SPEED</div><div class="value" id="hud-speed">0 km/h</div></div>
+    <div class="panel"><div class="label">ALTITUDE</div><div class="value" id="hud-alt">0 m</div></div>
+    <div class="panel"><div class="label">HEADING</div><div class="value" id="hud-hdg">000°</div></div>
+  </div>
+  <div id="hud-right">
+    <canvas id="hud-horizon" width="120" height="120"></canvas>
+    <div class="panel"><div class="label">SCORE</div><div class="value" id="hud-score">0</div></div>
+    <div class="panel"><div class="label">RINGS</div><div class="value" id="hud-rings">0 / 6</div></div>
+    <div class="panel"><div class="label">STAGE</div><div class="value" id="hud-stage" style="font-size:15px">RING RUN</div></div>
+  </div>
+  <div id="hud-fuel" class="panel">
+    <div id="hud-fuel-text">FUEL 100%</div>
+    <div id="hud-fuel-track"><div id="hud-fuel-fill"></div></div>
+  </div>
+  <div id="hud-message"></div>
+  <div id="hud-warn"></div>
+  <div id="hud-help">W / S — throttle &nbsp;•&nbsp; A / D or ← / → — bank<br>
+    ↑ / ↓ — climb / descend &nbsp;•&nbsp; Drag mouse — look around<br>
+    P — pause &nbsp;•&nbsp; M — sound &nbsp;•&nbsp; R — restart</div>
+  <button id="btn-mute">SOUND: ON</button>
+</div>
+
+<div class="screen" id="screen-menu" style="display:flex">
+  <h1>SKYLANE</h1>
+  <h2>ISLAND RUN</h2>
+  <p>Take off from the island runway, thread the glowing rings over the
+     archipelago, and bring her home. Rings refuel you — the sea and the
+     hills do not forgive.</p>
+  <div class="keys">
+    <b>W</b>/<b>S</b> throttle &nbsp; <b>A</b>/<b>D</b> or <b>←</b>/<b>→</b> bank &nbsp;
+    <b>↑</b>/<b>↓</b> climb / descend<br>
+    <b>Stage 1</b> Ring Run (6 rings) &nbsp;•&nbsp; <b>Stage 2</b> Island Tour (8 rings)<br>
+    <b>Stage 3</b> Final Approach — land on the runway to finish
+  </div>
+  <button class="big-btn" id="btn-takeoff">TAKE OFF</button>
+</div>
+
+<div class="screen" id="screen-pause">
+  <h1>PAUSED</h1>
+  <p>Engine idling. The island waits.</p>
+  <button class="big-btn" id="btn-resume">RESUME</button>
+</div>
+
+<div class="screen" id="screen-crash">
+  <h1>CRASHED</h1>
+  <p id="crash-reason"></p>
+  <div class="score-line" id="crash-score"></div>
+  <button class="big-btn" id="btn-retry">FLY AGAIN</button>
+</div>
+
+<div class="screen" id="screen-complete">
+  <h1>MISSION COMPLETE</h1>
+  <p>You flew every ring and landed her safe on the runway. The island is yours.</p>
+  <div class="score-line" id="complete-score"></div>
+  <button class="big-btn" id="btn-flyagain">FLY AGAIN</button>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/config.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/input.js"></script>
+<script src="src/world.js"></script>
+<script src="src/plane.js"></script>
+<script src="src/hud.js"></script>
+<script src="src/main.js"></script>
+<script>
+  // Show the HUD once the game leaves the menu; hide it on the menu screens.
+  (function () {
+    const hud = document.getElementById('hud');
+    const obs = new MutationObserver(function () {
+      const menu = document.getElementById('screen-menu');
+      hud.classList.toggle('on', menu.style.display !== 'flex');
+    });
+    ['screen-menu', 'screen-pause', 'screen-crash', 'screen-complete'].forEach(function (id) {
+      obs.observe(document.getElementById(id), { attributes: true, attributeFilter: ['style'] });
+    });
+  })();
+</script>
+</body>
+</html>
